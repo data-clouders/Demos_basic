@@ -15,7 +15,7 @@ Antes de desplegar las demos, asegúrate de contar con lo siguiente:
 - [AWS CLI](https://aws.amazon.com/cli/) instalado y configurado con las credenciales de tu cuenta AWS.
 - Acceso a una cuenta de AWS.
 - Conocimientos básicos sobre AWS CloudFormation y los servicios de AWS.
-- [Git](https://github.com/data-clouders/Demos_basic.git) para clonar el repositorio.
+- [Git](https://git-scm.com/) para clonar el repositorio.
 
 ## Uso
 
