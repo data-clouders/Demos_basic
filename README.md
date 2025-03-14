@@ -8,6 +8,11 @@ Este repositorio contiene una serie de demos básicas que ilustran cómo despleg
   Breve descripción de lo que se despliega en esta demo.
 
 
+
+> ![Arquitectura de referencia](01-Demo[EC2-Lambda-StepFunction]/EC2.png)
+
+> ![Arquitectura de referencia](01-Demo[EC2-Lambda-StepFunction]/Lambda-StepFunction.png)
+
 ## Requisitos Previos
 
 Antes de desplegar las demos, asegúrate de contar con lo siguiente:
