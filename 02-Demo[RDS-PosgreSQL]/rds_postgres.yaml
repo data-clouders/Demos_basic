@@ -1,0 +1,193 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Template para desplegar una base de datos PostgreSQL en AWS utilizando la capa gratuita.
+  Este template crea una VPC con dos subredes públicas, configura el acceso a Internet, 
+  define un grupo de seguridad que permite el acceso a PostgreSQL y despliega una instancia RDS 
+  db.t2.micro en un grupo de subredes.
+
+# -----------------------------
+# Parámetros de entrada
+# -----------------------------
+Parameters:
+  DBName:
+    Description: Nombre de la base de datos a crear.
+    Type: String
+    Default: 'mydatabase'
+  DBUser:
+    Description: Nombre del usuario administrador de la base de datos.
+    Type: String
+    Default: 'admin'
+  DBPassword:
+    Description: Contraseña para el usuario administrador.
+    Type: String
+    NoEcho: true
+  DBAllocatedStorage:
+    Description: Tamaño de almacenamiento en GB para la base de datos (mínimo 20GB para free tier).
+    Type: Number
+    Default: 20
+    MinValue: 20
+    MaxValue: 1024
+  VpcCIDR:
+    Description: CIDR a asignar a la VPC.
+    Type: String
+    Default: '10.0.0.0/16'
+  PublicSubnet1CIDR:
+    Description: CIDR para la primera subred pública.
+    Type: String
+    Default: '10.0.1.0/24'
+  PublicSubnet2CIDR:
+    Description: CIDR para la segunda subred pública.
+    Type: String
+    Default: '10.0.2.0/24'
+  AllowedIP:
+    Description: Rango de IPs que tendrán acceso a la base de datos (ej. 0.0.0.0/0 para acceso global; se recomienda restringirlo en producción).
+    Type: String
+    Default: '0.0.0.0/0'
+
+# -----------------------------
+# Recursos a crear
+# -----------------------------
+Resources:
+  # Creación de la VPC principal
+  MyVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: MyVPC
+
+  # Creación de la primera subred pública
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PublicSubnet1CIDR
+      AvailabilityZone: !Select [0, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnet1
+
+  # Creación de la segunda subred pública
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref MyVPC
+      CidrBlock: !Ref PublicSubnet2CIDR
+      AvailabilityZone: !Select [1, !GetAZs '']
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnet2
+
+  # Creación del Internet Gateway para habilitar la conectividad a Internet en la VPC
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: MyInternetGateway
+
+  # Asociación del Internet Gateway con la VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref MyVPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # Creación de la tabla de rutas para las subredes públicas
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref MyVPC
+      Tags:
+        - Key: Name
+          Value: PublicRouteTable
+
+  # Configuración de la ruta para dirigir todo el tráfico 0.0.0.0/0 hacia el Internet Gateway
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: AttachGateway
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  # Asociación de la tabla de rutas a la primera subred pública
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet1
+      RouteTableId: !Ref PublicRouteTable
+
+  # Asociación de la tabla de rutas a la segunda subred pública
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  # Grupo de seguridad que permite el acceso a la base de datos PostgreSQL en el puerto 5432
+  RDSSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Permitir acceso a la base de datos PostgreSQL
+      VpcId: !Ref MyVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          CidrIp: !Ref AllowedIP
+      Tags:
+        - Key: Name
+          Value: RDSSecurityGroup
+
+  # Grupo de subredes para RDS, se requieren al menos dos subredes en AZs diferentes
+  DBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subredes para la instancia RDS PostgreSQL
+      SubnetIds:
+        - !Ref PublicSubnet1
+        - !Ref PublicSubnet2
+      Tags:
+        - Key: Name
+          Value: DBSubnetGroup
+
+  # Instancia RDS PostgreSQL utilizando una instancia db.t4g.micro (compatible con la capa gratuita)
+  MyPostgreSQLDB:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBName: !Ref DBName
+      AllocatedStorage: !Ref DBAllocatedStorage
+      DBInstanceClass: db.t4g.micro
+      Engine: postgres
+      EngineVersion: "17.2"
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+      VPCSecurityGroups:
+        - !GetAtt RDSSecurityGroup.GroupId
+      DBSubnetGroupName: !Ref DBSubnetGroup
+      MultiAZ: false               # Desactivar Multi-AZ para cumplir con la capa gratuita
+      PubliclyAccessible: true     # Permite el acceso público (ajustar según requerimientos de seguridad)
+      BackupRetentionPeriod: 7     # Retención de backups durante 7 días
+      StorageType: gp2             # Tipo de almacenamiento general (SSD)
+      DeletionProtection: false    # Deshabilita protección contra eliminación para facilitar pruebas
+    Metadata:
+      Comment: >
+        Este recurso crea una instancia de RDS PostgreSQL en una instancia db.t4g.micro, 
+        garantizando compatibilidad con la capa gratuita de AWS.
+
+# -----------------------------
+# Salidas (Outputs)
+# -----------------------------
+Outputs:
+  DBEndpoint:
+    Description: "Endpoint de la base de datos PostgreSQL"
+    Value: !GetAtt MyPostgreSQLDB.Endpoint.Address
+  DBInstanceIdentifier:
+    Description: "Identificador de la instancia RDS"
+    Value: !Ref MyPostgreSQLDB
